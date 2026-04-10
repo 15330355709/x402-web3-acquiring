@@ -48,6 +48,9 @@
     }
     .btn:hover { background: #1d4ed8; }
     .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    #approve-btn { background: #059669; }
+    #approve-btn:hover { background: #047857; }
+    #approve-btn:disabled { background: #6b7280; }
     .status {
       margin-top: 20px;
       padding: 12px;
@@ -85,6 +88,9 @@
       <div class="description" id="description"></div>
       <button class="btn" id="pay-btn" onclick="connectAndPay()">
         Connect Wallet & Pay
+      </button>
+      <button class="btn" id="approve-btn" onclick="approvePermit2()" style="margin-top: 12px; background: #059669;">
+        Approve Permit2 (One-time)
       </button>
       <div id="status" class="hidden"></div>
     </div>
@@ -133,6 +139,8 @@
       }
     }
 
+    let provider, signer, address, requirements, paymentRequired;
+
     async function connectAndPay() {
       const btn = document.getElementById('pay-btn');
 
@@ -153,7 +161,6 @@
             params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
           });
         } catch (switchErr) {
-          // Chain not added yet, add it
           if (switchErr.code === 4902) {
             await window.ethereum.request({
               method: 'wallet_addEthereumChain',
@@ -171,9 +178,9 @@
         }
 
         // Connect wallet
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const address = await signer.getAddress();
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        address = await signer.getAddress();
 
         btn.innerHTML = '<span class="spinner"></span>Processing payment...';
         showStatus('Requesting payment details from server...', 'info');
@@ -193,10 +200,10 @@
         const paymentRequiredHeader = payRes.headers.get('payment-required');
         if (!paymentRequiredHeader) throw new Error('Missing payment requirements');
 
-        const paymentRequired = JSON.parse(atob(paymentRequiredHeader));
-        const requirements = paymentRequired.accepts[0];
+        paymentRequired = JSON.parse(atob(paymentRequiredHeader));
+        requirements = paymentRequired.accepts[0];
 
-        showStatus('Please approve the transaction in your wallet...', 'info');
+        showStatus('Please sign the payment authorization in your wallet...', 'info');
 
         // Step 2: Sign Permit2 authorization
         const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
@@ -289,6 +296,84 @@
         }
         btn.disabled = false;
         btn.textContent = 'Connect Wallet & Pay';
+      }
+    }
+
+    async function approvePermit2() {
+      const btn = document.getElementById('approve-btn');
+      const payBtn = document.getElementById('pay-btn');
+
+      if (!window.ethereum) {
+        showStatus('Please install MetaMask', 'error');
+        return;
+      }
+
+      try {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Approving...';
+
+        const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+          });
+        } catch (switchErr) {
+          if (switchErr.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: BASE_SEPOLIA_CHAIN_ID,
+                chainName: 'Base Sepolia',
+                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://sepolia.base.org'],
+                blockExplorerUrls: ['https://sepolia.basescan.org'],
+              }],
+            });
+          }
+        }
+
+        const p = new ethers.BrowserProvider(window.ethereum);
+        const s = await p.getSigner();
+        const addr = await s.getAddress();
+
+        // Get payment requirements to know the token address
+        const payRes = await fetch(`/pay/${paymentId}`);
+        if (payRes.status !== 402) {
+          throw new Error('Could not get payment requirements');
+        }
+        const header = payRes.headers.get('payment-required');
+        const pr = JSON.parse(atob(header));
+        const req = pr.accepts[0];
+
+        // ERC20 approve for Permit2
+        const USDC_ADDRESS = req.asset;
+        const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+        const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+
+        const erc20 = new ethers.Contract(USDC_ADDRESS, [
+          'function approve(address spender, uint256 amount) public returns (bool)',
+        ], s);
+
+        showStatus('Please confirm the approval transaction...', 'info');
+        const tx = await erc20.approve(PERMIT2_ADDRESS, MaxUint256);
+        showStatus('Waiting for approval confirmation...', 'info');
+        await tx.wait();
+
+        showStatus('Permit2 approved! You can now pay.', 'success');
+        btn.disabled = false;
+        btn.textContent = 'Permit2 Approved ✓';
+        btn.style.background = '#16a34a';
+        payBtn.disabled = false;
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.textContent = 'Approve Permit2 (One-time)';
+        if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+          showStatus('Approval rejected', 'error');
+        } else {
+          showStatus(err.message || 'Approval failed', 'error');
+        }
       }
     }
 
