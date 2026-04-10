@@ -75,16 +75,10 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
-    .wallet-options { margin-top: 20px; }
-    .wallet-btn {
-      background: #f59e0b;
-      margin-top: 8px;
-    }
-    .wallet-btn:hover { background: #d97706; }
-    .mobile-note {
+    .hint {
       font-size: 12px;
-      color: #666;
-      margin-top: 8px;
+      color: #888;
+      margin-top: 12px;
     }
   </style>
 </head>
@@ -98,22 +92,13 @@
       <div class="currency">USDC (Base Sepolia Testnet)</div>
       <div class="description" id="description"></div>
 
-      <div id="desktop-section">
-        <button class="btn" id="approve-btn" onclick="approvePermit2()">
-          Approve Permit2 (One-time)
-        </button>
-        <button class="btn" id="pay-btn" onclick="connectAndPay()">
-          Connect Wallet & Pay
-        </button>
-        <p class="mobile-note">For desktop browser with MetaMask extension</p>
-      </div>
-
-      <div id="mobile-section" class="hidden">
-        <button class="btn wallet-btn" onclick="openMetaMaskMobile()">
-          Open in MetaMask App
-        </button>
-        <p class="mobile-note" id="mobile-hint">Tap to open in MetaMask mobile app</p>
-      </div>
+      <button class="btn" id="approve-btn" onclick="approvePermit2()">
+        Approve Permit2 (One-time)
+      </button>
+      <button class="btn" id="pay-btn" onclick="connectAndPay()">
+        Connect Wallet & Pay
+      </button>
+      <p class="hint" id="wallet-hint">Make sure you have ETH and USDC on Base Sepolia</p>
 
       <div id="status" class="hidden"></div>
     </div>
@@ -135,19 +120,9 @@
   <script>
     const paymentId = window.location.pathname.split('/').pop();
     let paymentData = null;
-    let isMobile = false;
-    let provider, signer, address, requirements, paymentRequired;
-
-    // Detect mobile device
-    function detectMobile() {
-      const ua = navigator.userAgent.toLowerCase();
-      return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
-    }
 
     async function loadPayment() {
       try {
-        isMobile = detectMobile();
-
         const res = await fetch(`/api/payment-links/${paymentId}`);
         const data = await res.json();
 
@@ -164,15 +139,6 @@
         document.getElementById('merchant-name').textContent = `Merchant: ${data.merchant_id}`;
         document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
         document.getElementById('description').textContent = data.description || '';
-
-        if (isMobile) {
-          document.getElementById('desktop-section').classList.add('hidden');
-          document.getElementById('mobile-section').classList.remove('hidden');
-        } else {
-          document.getElementById('desktop-section').classList.remove('hidden');
-          document.getElementById('mobile-section').classList.add('hidden');
-        }
-
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('payment-info').classList.remove('hidden');
       } catch (err) {
@@ -180,68 +146,11 @@
       }
     }
 
-    // Open in MetaMask Mobile via deep link
-    async function openMetaMaskMobile() {
-      try {
-        // Build the payment URL
-        const paymentUrl = `${window.location.origin}/pay/${paymentId}`;
-
-        // For MetaMask mobile, use the metamask:// protocol
-        // Encode the URL to pass to MetaMask
-        const encodedUrl = encodeURIComponent(paymentUrl);
-
-        // MetaMask mobile deep link format
-        const metamaskUrl = `metamask://pay?connect=true&url=${encodedUrl}`;
-
-        // Try to open MetaMask
-        window.location.href = metamaskUrl;
-
-        // Also provide fallback - show instructions
-        setTimeout(() => {
-          if (!document.hidden) {
-            showStatus('If MetaMask did not open, please copy the link and open in MetaMask mobile browser', 'info');
-          }
-        }, 2000);
-
-        // Start polling for payment status
-        pollPaymentStatus();
-      } catch (err) {
-        showStatus('Failed to open MetaMask: ' + err.message, 'error');
-      }
-    }
-
-    // Poll payment status for mobile
-    async function pollPaymentStatus() {
-      const maxAttempts = 30;
-      let attempts = 0;
-
-      const interval = setInterval(async () => {
-        attempts++;
-        try {
-          const res = await fetch(`/api/payment-links/${paymentId}`);
-          const data = await res.json();
-
-          if (data.status === 'paid') {
-            clearInterval(interval);
-            showPaid(data.tx_hash);
-          } else if (data.status === 'expired') {
-            clearInterval(interval);
-            showExpired();
-          } else if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            showStatus('Payment timeout. Please try again.', 'error');
-          }
-        } catch (err) {
-          console.error('Poll error:', err);
-        }
-      }, 3000);
-    }
-
     async function connectAndPay() {
       const btn = document.getElementById('pay-btn');
 
       if (!window.ethereum) {
-        showStatus('Please install MetaMask or another Ethereum wallet', 'error');
+        showStatus('Please open this page in MetaMask browser or install MetaMask', 'error');
         return;
       }
 
@@ -272,9 +181,9 @@
           }
         }
 
-        provider = new ethers.BrowserProvider(window.ethereum);
-        signer = await provider.getSigner();
-        address = await signer.getAddress();
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const address = await signer.getAddress();
 
         btn.innerHTML = '<span class="spinner"></span>Processing payment...';
         showStatus('Requesting payment details from server...', 'info');
@@ -293,8 +202,8 @@
         const paymentRequiredHeader = payRes.headers.get('payment-required');
         if (!paymentRequiredHeader) throw new Error('Missing payment requirements');
 
-        paymentRequired = JSON.parse(atob(paymentRequiredHeader));
-        requirements = paymentRequired.accepts[0];
+        const paymentRequired = JSON.parse(atob(paymentRequiredHeader));
+        const requirements = paymentRequired.accepts[0];
 
         showStatus('Please sign the payment authorization in your wallet...', 'info');
 
@@ -395,7 +304,7 @@
       const payBtn = document.getElementById('pay-btn');
 
       if (!window.ethereum) {
-        showStatus('Please install MetaMask', 'error');
+        showStatus('Please open this page in MetaMask browser or install MetaMask', 'error');
         return;
       }
 
