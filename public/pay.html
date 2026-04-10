@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+      padding: 40px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+    .amount {
+      font-size: 48px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 24px 0 8px;
+    }
+    .currency { color: #666; font-size: 16px; margin-bottom: 8px; }
+    .description { color: #888; font-size: 14px; margin-bottom: 32px; }
+    .merchant { color: #444; font-size: 14px; margin-bottom: 4px; }
+    .btn {
+      display: inline-block;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .status.success { background: #dcfce7; color: #166534; }
+    .status.error { background: #fee2e2; color: #991b1b; }
+    .status.info { background: #e0f2fe; color: #075985; }
+    .status.expired { background: #fef3c7; color: #92400e; }
+    .tx-link { word-break: break-all; font-size: 12px; margin-top: 8px; }
+    .tx-link a { color: #2563eb; }
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 3px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="loading">Loading payment details...</div>
+
+    <div id="payment-info" class="hidden">
+      <div class="merchant" id="merchant-name"></div>
+      <div class="amount" id="amount"></div>
+      <div class="currency">USDC (Base Sepolia Testnet)</div>
+      <div class="description" id="description"></div>
+      <button class="btn" id="pay-btn" onclick="connectAndPay()">
+        Connect Wallet & Pay
+      </button>
+      <div id="status" class="hidden"></div>
+    </div>
+
+    <div id="paid-info" class="hidden">
+      <div style="font-size: 64px; margin-bottom: 16px;">&#10003;</div>
+      <h2>Payment Complete</h2>
+      <div class="tx-link" id="tx-link"></div>
+    </div>
+
+    <div id="expired-info" class="hidden">
+      <div style="font-size: 64px; margin-bottom: 16px;">&#9202;</div>
+      <h2>Payment Link Expired</h2>
+      <p style="color: #888; margin-top: 8px;">This payment link is no longer valid.</p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+  <script>
+    const paymentId = window.location.pathname.split('/').pop();
+    let paymentData = null;
+
+    async function loadPayment() {
+      try {
+        // First try the API to get payment info
+        const res = await fetch(`/api/payment-links/${paymentId}`);
+        const data = await res.json();
+
+        if (data.status === 'paid') {
+          showPaid(data.tx_hash);
+          return;
+        }
+        if (data.status === 'expired') {
+          showExpired();
+          return;
+        }
+
+        paymentData = data;
+        document.getElementById('merchant-name').textContent = `Merchant: ${data.merchant_id}`;
+        document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
+        document.getElementById('description').textContent = data.description || '';
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('payment-info').classList.remove('hidden');
+      } catch (err) {
+        showStatus('Failed to load payment details', 'error');
+      }
+    }
+
+    async function connectAndPay() {
+      const btn = document.getElementById('pay-btn');
+
+      if (!window.ethereum) {
+        showStatus('Please install MetaMask or another Ethereum wallet', 'error');
+        return;
+      }
+
+      try {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Connecting...';
+
+        // Switch to Base Sepolia network
+        const BASE_SEPOLIA_CHAIN_ID = '0x14a34'; // 84532
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+          });
+        } catch (switchErr) {
+          // Chain not added yet, add it
+          if (switchErr.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: BASE_SEPOLIA_CHAIN_ID,
+                chainName: 'Base Sepolia',
+                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://sepolia.base.org'],
+                blockExplorerUrls: ['https://sepolia.basescan.org'],
+              }],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+
+        // Connect wallet
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const address = await signer.getAddress();
+
+        btn.innerHTML = '<span class="spinner"></span>Processing payment...';
+        showStatus('Requesting payment details from server...', 'info');
+
+        // Step 1: Get 402 response with payment requirements
+        const payRes = await fetch(`/pay/${paymentId}`);
+
+        if (payRes.status !== 402) {
+          if (payRes.status === 200) {
+            const result = await payRes.json();
+            showPaid(result.tx_hash);
+            return;
+          }
+          throw new Error('Unexpected response from server');
+        }
+
+        const paymentRequiredHeader = payRes.headers.get('payment-required');
+        if (!paymentRequiredHeader) throw new Error('Missing payment requirements');
+
+        const paymentRequired = JSON.parse(atob(paymentRequiredHeader));
+        const requirements = paymentRequired.accepts[0];
+
+        showStatus('Please approve the transaction in your wallet...', 'info');
+
+        // Step 2: Sign Permit2 authorization
+        const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+        const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
+        const chainId = 84532;
+
+        const nonce = BigInt(ethers.hexlify(ethers.randomBytes(32)));
+        const validAfter = Math.floor(Date.now() / 1000) - 600;
+        const deadline = Math.floor(Date.now() / 1000) + 1800;
+
+        const domain = {
+          name: 'Permit2',
+          chainId: chainId,
+          verifyingContract: PERMIT2_ADDRESS,
+        };
+
+        const types = {
+          PermitWitnessTransferFrom: [
+            { name: 'permitted', type: 'TokenPermissions' },
+            { name: 'spender', type: 'address' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' },
+            { name: 'witness', type: 'Witness' },
+          ],
+          TokenPermissions: [
+            { name: 'token', type: 'address' },
+            { name: 'amount', type: 'uint256' },
+          ],
+          Witness: [
+            { name: 'to', type: 'address' },
+            { name: 'validAfter', type: 'uint256' },
+          ],
+        };
+
+        const message = {
+          permitted: {
+            token: requirements.asset,
+            amount: requirements.amount,
+          },
+          spender: X402_PROXY,
+          nonce: nonce,
+          deadline: deadline,
+          witness: {
+            to: requirements.payTo,
+            validAfter: validAfter,
+          },
+        };
+
+        const signature = await signer.signTypedData(domain, types, message);
+
+        // Step 3: Send payment signature to server
+        showStatus('Submitting payment...', 'info');
+
+        const paymentPayload = {
+          x402Version: 2,
+          accepted: requirements,
+          resource: paymentRequired.resource,
+          payload: {
+            signature,
+            permit2Authorization: {
+              from: address,
+              permitted: { token: requirements.asset, amount: requirements.amount },
+              spender: X402_PROXY,
+              nonce: nonce.toString(),
+              deadline: deadline,
+              witness: { to: requirements.payTo, validAfter: validAfter },
+            },
+          },
+        };
+
+        const settleRes = await fetch(`/pay/${paymentId}`, {
+          headers: {
+            'Payment-Signature': btoa(JSON.stringify(paymentPayload)),
+          },
+        });
+
+        if (settleRes.status === 200) {
+          const result = await settleRes.json();
+          showPaid(result.tx_hash);
+        } else {
+          const err = await settleRes.json();
+          throw new Error(err.error || 'Payment failed');
+        }
+      } catch (err) {
+        console.error(err);
+        if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+          showStatus('Transaction rejected by user', 'error');
+        } else {
+          showStatus(err.message || 'Payment failed', 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = 'Connect Wallet & Pay';
+      }
+    }
+
+    function showStatus(message, type) {
+      const el = document.getElementById('status');
+      el.className = `status ${type}`;
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+
+    function showPaid(txHash) {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('payment-info').classList.add('hidden');
+      document.getElementById('expired-info').classList.add('hidden');
+      document.getElementById('paid-info').classList.remove('hidden');
+
+      if (txHash) {
+        document.getElementById('tx-link').innerHTML =
+          `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">${txHash}</a>`;
+      }
+    }
+
+    function showExpired() {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('payment-info').classList.add('hidden');
+      document.getElementById('paid-info').classList.add('hidden');
+      document.getElementById('expired-info').classList.remove('hidden');
+    }
+
+    loadPayment();
+  </script>
+</body>
+</html>
