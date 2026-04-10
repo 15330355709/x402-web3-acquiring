@@ -3,110 +3,352 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payment</title>
+  <title>Pay - x402 Web3 Payment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
       padding: 20px;
+    }
+    .container {
+      width: 100%;
+      max-width: 420px;
     }
     .card {
       background: white;
-      border-radius: 16px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.1);
-      padding: 40px;
-      max-width: 420px;
-      width: 100%;
-      text-align: center;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      overflow: hidden;
     }
-    .amount {
+    .header {
+      background: #f8fafc;
+      padding: 24px 32px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .header-text h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .header-text p {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .content {
+      padding: 32px;
+    }
+    .merchant-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .merchant-icon {
+      width: 48px;
+      height: 48px;
+      background: #f1f5f9;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .merchant-info h2 {
+      font-size: 14px;
+      font-weight: 500;
+      color: #64748b;
+    }
+    .merchant-info p {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .amount-box {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .amount-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .amount-value {
       font-size: 48px;
       font-weight: 700;
-      color: #1a1a1a;
-      margin: 24px 0 8px;
+      color: #1e293b;
+      line-height: 1;
     }
-    .currency { color: #666; font-size: 16px; margin-bottom: 8px; }
-    .description { color: #888; font-size: 14px; margin-bottom: 32px; }
-    .merchant { color: #444; font-size: 14px; margin-bottom: 4px; }
+    .amount-currency {
+      font-size: 18px;
+      font-weight: 500;
+      color: #64748b;
+      margin-left: 4px;
+    }
+    .description-box {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .description-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .description-value {
+      font-size: 14px;
+      color: #1e293b;
+    }
+    .network-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #dcfce7;
+      color: #166534;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+    .network-badge::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: #22c55e;
+      border-radius: 50%;
+    }
     .btn {
-      display: inline-block;
-      background: #2563eb;
+      display: block;
+      width: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border: none;
-      border-radius: 12px;
-      padding: 16px 32px;
+      border-radius: 16px;
+      padding: 18px 32px;
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      width: 100%;
-      transition: background 0.2s;
+      transition: transform 0.2s, box-shadow 0.2s;
+      font-family: inherit;
     }
-    .btn:hover { background: #1d4ed8; }
-    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
-    .status {
-      margin-top: 20px;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 14px;
+    .btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
     }
-    .status.success { background: #dcfce7; color: #166534; }
-    .status.error { background: #fee2e2; color: #991b1b; }
-    .status.info { background: #e0f2fe; color: #075985; }
-    .status.expired { background: #fef3c7; color: #92400e; }
-    .tx-link { word-break: break-all; font-size: 12px; margin-top: 8px; }
-    .tx-link a { color: #2563eb; }
-    .spinner {
+    .btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .btn .spinner {
       display: inline-block;
-      width: 20px; height: 20px;
-      border: 3px solid #fff;
-      border-top-color: transparent;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       vertical-align: middle;
       margin-right: 8px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .hidden { display: none; }
-    .hint {
+    .status {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .status.info { background: #e0f2fe; color: #0369a1; }
+    .status.success { background: #dcfce7; color: #166534; }
+    .status.error { background: #fee2e2; color: #dc2626; }
+    .status.warning { background: #fef3c7; color: #d97706; }
+    .paid-section {
+      text-align: center;
+      padding: 48px 32px;
+    }
+    .paid-icon {
+      width: 80px;
+      height: 80px;
+      background: #dcfce7;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      font-size: 40px;
+    }
+    .paid-section h2 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    .paid-section p {
+      color: #64748b;
+      margin-bottom: 24px;
+    }
+    .tx-link {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 16px;
       font-size: 12px;
-      color: #888;
-      margin-top: 12px;
+      word-break: break-all;
+      color: #667eea;
+    }
+    .tx-link a {
+      color: #667eea;
+      text-decoration: none;
+    }
+    .expired-section {
+      text-align: center;
+      padding: 48px 32px;
+    }
+    .expired-icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+    }
+    .expired-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    .expired-section p {
+      color: #64748b;
+    }
+    .hidden { display: none; }
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 32px;
+    }
+    .loading-spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid #e2e8f0;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+    .loading p {
+      color: #64748b;
+      font-size: 14px;
+    }
+    .footer {
+      padding: 16px 32px;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+    }
+    .footer p {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .footer img {
+      height: 16px;
+      vertical-align: middle;
+      margin-right: 4px;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div id="loading">Loading payment details...</div>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <div class="logo">x</div>
+        <div class="header-text">
+          <h1>x402 Payment</h1>
+          <p>Web3 Acquiriring</p>
+        </div>
+      </div>
 
-    <div id="payment-info" class="hidden">
-      <div class="merchant" id="merchant-name"></div>
-      <div class="amount" id="amount"></div>
-      <div class="currency">USDC (Base Sepolia Testnet)</div>
-      <div class="description" id="description"></div>
+      <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        <p>Loading payment details...</p>
+      </div>
 
-      <button class="btn" id="pay-btn" onclick="pay()">
-        Pay Now
-      </button>
-      <p class="hint" id="wallet-hint">Make sure you have ETH and USDC on Base Sepolia</p>
+      <div id="payment-info" class="hidden">
+        <div class="content">
+          <div class="merchant-row">
+            <div class="merchant-icon">🏪</div>
+            <div class="merchant-info">
+              <h2>Merchant</h2>
+              <p id="merchant-name">-</p>
+            </div>
+          </div>
 
-      <div id="status" class="hidden"></div>
-    </div>
+          <div class="amount-box">
+            <div class="amount-label">Amount</div>
+            <div>
+              <span class="amount-value" id="amount">-</span>
+              <span class="amount-currency">USDC</span>
+            </div>
+          </div>
 
-    <div id="paid-info" class="hidden">
-      <div style="font-size: 64px; margin-bottom: 16px;">&#10003;</div>
-      <h2>Payment Complete</h2>
-      <div class="tx-link" id="tx-link"></div>
-    </div>
+          <div class="network-badge" id="network-badge">Base Sepolia Testnet</div>
 
-    <div id="expired-info" class="hidden">
-      <div style="font-size: 64px; margin-bottom: 16px;">&#9202;</div>
-      <h2>Payment Link Expired</h2>
-      <p style="color: #888; margin-top: 8px;">This payment link is no longer valid.</p>
+          <div class="description-box">
+            <div class="description-label">Description</div>
+            <div class="description-value" id="description">-</div>
+          </div>
+
+          <button class="btn" id="pay-btn" onclick="pay()">
+            Pay Now
+          </button>
+
+          <div id="status" class="status hidden"></div>
+        </div>
+
+        <div class="footer">
+          <p>Powered by x402 Protocol</p>
+        </div>
+      </div>
+
+      <div id="paid-info" class="paid-section hidden">
+        <div class="paid-icon">✓</div>
+        <h2>Payment Complete!</h2>
+        <p>Your payment has been processed successfully.</p>
+        <div class="tx-link" id="tx-link"></div>
+      </div>
+
+      <div id="expired-info" class="expired-section hidden">
+        <div class="expired-icon">⏱️</div>
+        <h2>Payment Expired</h2>
+        <p>This payment link is no longer valid.</p>
+      </div>
     </div>
   </div>
 
@@ -132,9 +374,9 @@
           return;
         }
 
-        document.getElementById('merchant-name').textContent = `Merchant: ${data.merchant_id}`;
+        document.getElementById('merchant-name').textContent = data.merchant_id;
         document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
-        document.getElementById('description').textContent = data.description || '';
+        document.getElementById('description').textContent = data.description || 'No description';
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('payment-info').classList.remove('hidden');
       } catch (err) {
@@ -152,17 +394,17 @@
 
       try {
         btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Connecting...';
 
-        // 1. Switch to Base Sepolia
         await switchToBaseSepolia();
 
-        // 2. Connect wallet
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
 
-        // 3. Get payment requirements
         showStatus('Getting payment info...', 'info');
+        btn.innerHTML = '<span class="spinner"></span>Verifying...';
+
         const payRes = await fetch(`/pay/${paymentId}`);
         if (payRes.status === 200) {
           const result = await payRes.json();
@@ -178,17 +420,17 @@
         const requirements = paymentRequired.accepts[0];
         const amount = BigInt(requirements.amount);
 
-        // 4. Check Permit2 allowance
         showStatus('Checking token allowance...', 'info');
+        btn.innerHTML = '<span class="spinner"></span>Checking...';
+
         const erc20 = new ethers.Contract(requirements.asset, [
           'function allowance(address owner, address spender) view returns (uint256)',
         ], provider);
 
         const currentAllowance = await erc20.allowance(address, PERMIT2_ADDRESS);
 
-        // 5. Approve if needed
         if (currentAllowance < amount) {
-          showStatus('Approving Permit2 to use your USDC...', 'info');
+          showStatus('Approval required. Please confirm in wallet...', 'info');
           btn.innerHTML = '<span class="spinner"></span>Approving...';
 
           const erc20WithSigner = new ethers.Contract(requirements.asset, [
@@ -197,12 +439,11 @@
 
           const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
           const approveTx = await erc20WithSigner.approve(PERMIT2_ADDRESS, MaxUint256);
-          showStatus('Waiting for approval confirmation...', 'info');
+          showStatus('Waiting for approval...', 'info');
           await approveTx.wait();
           showStatus('Approval confirmed!', 'success');
         }
 
-        // 6. Sign and pay
         btn.innerHTML = '<span class="spinner"></span>Signing...';
         showStatus('Please sign the payment in your wallet...', 'info');
 
@@ -246,7 +487,7 @@
         const signature = await signer.signTypedData(domain, types, message);
 
         btn.innerHTML = '<span class="spinner"></span>Submitting...';
-        showStatus('Submitting payment to server...', 'info');
+        showStatus('Submitting payment...', 'info');
 
         const paymentPayload = {
           x402Version: 2,
@@ -322,20 +563,16 @@
     }
 
     function showPaid(txHash) {
-      document.getElementById('loading').classList.add('hidden');
       document.getElementById('payment-info').classList.add('hidden');
-      document.getElementById('expired-info').classList.add('hidden');
       document.getElementById('paid-info').classList.remove('hidden');
       if (txHash) {
         document.getElementById('tx-link').innerHTML =
-          `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">${txHash}</a>`;
+          `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">View Transaction →</a>`;
       }
     }
 
     function showExpired() {
-      document.getElementById('loading').classList.add('hidden');
       document.getElementById('payment-info').classList.add('hidden');
-      document.getElementById('paid-info').classList.add('hidden');
       document.getElementById('expired-info').classList.remove('hidden');
     }
 
