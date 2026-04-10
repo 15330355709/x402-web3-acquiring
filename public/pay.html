@@ -45,12 +45,12 @@
       cursor: pointer;
       width: 100%;
       transition: background 0.2s;
+      margin-top: 8px;
     }
     .btn:hover { background: #1d4ed8; }
     .btn:disabled { background: #94a3b8; cursor: not-allowed; }
     #approve-btn { background: #059669; }
     #approve-btn:hover { background: #047857; }
-    #approve-btn:disabled { background: #6b7280; }
     .status {
       margin-top: 20px;
       padding: 12px;
@@ -75,6 +75,17 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
+    .wallet-options { margin-top: 20px; }
+    .wallet-btn {
+      background: #f59e0b;
+      margin-top: 8px;
+    }
+    .wallet-btn:hover { background: #d97706; }
+    .mobile-note {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -86,12 +97,24 @@
       <div class="amount" id="amount"></div>
       <div class="currency">USDC (Base Sepolia Testnet)</div>
       <div class="description" id="description"></div>
-      <button class="btn" id="pay-btn" onclick="connectAndPay()">
-        Connect Wallet & Pay
-      </button>
-      <button class="btn" id="approve-btn" onclick="approvePermit2()" style="margin-top: 12px; background: #059669;">
-        Approve Permit2 (One-time)
-      </button>
+
+      <div id="desktop-section">
+        <button class="btn" id="approve-btn" onclick="approvePermit2()">
+          Approve Permit2 (One-time)
+        </button>
+        <button class="btn" id="pay-btn" onclick="connectAndPay()">
+          Connect Wallet & Pay
+        </button>
+        <p class="mobile-note">For desktop browser with MetaMask extension</p>
+      </div>
+
+      <div id="mobile-section" class="hidden">
+        <button class="btn wallet-btn" onclick="openMetaMaskMobile()">
+          Open in MetaMask App
+        </button>
+        <p class="mobile-note" id="mobile-hint">Tap to open in MetaMask mobile app</p>
+      </div>
+
       <div id="status" class="hidden"></div>
     </div>
 
@@ -112,10 +135,19 @@
   <script>
     const paymentId = window.location.pathname.split('/').pop();
     let paymentData = null;
+    let isMobile = false;
+    let provider, signer, address, requirements, paymentRequired;
+
+    // Detect mobile device
+    function detectMobile() {
+      const ua = navigator.userAgent.toLowerCase();
+      return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+    }
 
     async function loadPayment() {
       try {
-        // First try the API to get payment info
+        isMobile = detectMobile();
+
         const res = await fetch(`/api/payment-links/${paymentId}`);
         const data = await res.json();
 
@@ -132,6 +164,15 @@
         document.getElementById('merchant-name').textContent = `Merchant: ${data.merchant_id}`;
         document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
         document.getElementById('description').textContent = data.description || '';
+
+        if (isMobile) {
+          document.getElementById('desktop-section').classList.add('hidden');
+          document.getElementById('mobile-section').classList.remove('hidden');
+        } else {
+          document.getElementById('desktop-section').classList.remove('hidden');
+          document.getElementById('mobile-section').classList.add('hidden');
+        }
+
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('payment-info').classList.remove('hidden');
       } catch (err) {
@@ -139,7 +180,62 @@
       }
     }
 
-    let provider, signer, address, requirements, paymentRequired;
+    // Open in MetaMask Mobile via deep link
+    async function openMetaMaskMobile() {
+      try {
+        // Build the payment URL
+        const paymentUrl = `${window.location.origin}/pay/${paymentId}`;
+
+        // For MetaMask mobile, use the metamask:// protocol
+        // Encode the URL to pass to MetaMask
+        const encodedUrl = encodeURIComponent(paymentUrl);
+
+        // MetaMask mobile deep link format
+        const metamaskUrl = `metamask://pay?connect=true&url=${encodedUrl}`;
+
+        // Try to open MetaMask
+        window.location.href = metamaskUrl;
+
+        // Also provide fallback - show instructions
+        setTimeout(() => {
+          if (!document.hidden) {
+            showStatus('If MetaMask did not open, please copy the link and open in MetaMask mobile browser', 'info');
+          }
+        }, 2000);
+
+        // Start polling for payment status
+        pollPaymentStatus();
+      } catch (err) {
+        showStatus('Failed to open MetaMask: ' + err.message, 'error');
+      }
+    }
+
+    // Poll payment status for mobile
+    async function pollPaymentStatus() {
+      const maxAttempts = 30;
+      let attempts = 0;
+
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const res = await fetch(`/api/payment-links/${paymentId}`);
+          const data = await res.json();
+
+          if (data.status === 'paid') {
+            clearInterval(interval);
+            showPaid(data.tx_hash);
+          } else if (data.status === 'expired') {
+            clearInterval(interval);
+            showExpired();
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            showStatus('Payment timeout. Please try again.', 'error');
+          }
+        } catch (err) {
+          console.error('Poll error:', err);
+        }
+      }, 3000);
+    }
 
     async function connectAndPay() {
       const btn = document.getElementById('pay-btn');
@@ -153,8 +249,7 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span>Connecting...';
 
-        // Switch to Base Sepolia network
-        const BASE_SEPOLIA_CHAIN_ID = '0x14a34'; // 84532
+        const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
         try {
           await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
@@ -177,7 +272,6 @@
           }
         }
 
-        // Connect wallet
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
         address = await signer.getAddress();
@@ -185,7 +279,6 @@
         btn.innerHTML = '<span class="spinner"></span>Processing payment...';
         showStatus('Requesting payment details from server...', 'info');
 
-        // Step 1: Get 402 response with payment requirements
         const payRes = await fetch(`/pay/${paymentId}`);
 
         if (payRes.status !== 402) {
@@ -205,7 +298,6 @@
 
         showStatus('Please sign the payment authorization in your wallet...', 'info');
 
-        // Step 2: Sign Permit2 authorization
         const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
         const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
         const chainId = 84532;
@@ -254,7 +346,6 @@
 
         const signature = await signer.signTypedData(domain, types, message);
 
-        // Step 3: Send payment signature to server
         showStatus('Submitting payment...', 'info');
 
         const paymentPayload = {
@@ -335,9 +426,7 @@
 
         const p = new ethers.BrowserProvider(window.ethereum);
         const s = await p.getSigner();
-        const addr = await s.getAddress();
 
-        // Get payment requirements to know the token address
         const payRes = await fetch(`/pay/${paymentId}`);
         if (payRes.status !== 402) {
           throw new Error('Could not get payment requirements');
@@ -346,7 +435,6 @@
         const pr = JSON.parse(atob(header));
         const req = pr.accepts[0];
 
-        // ERC20 approve for Permit2
         const USDC_ADDRESS = req.asset;
         const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
         const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
