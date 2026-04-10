@@ -354,7 +354,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
   <script>
+    console.log('ethers loaded:', typeof ethers !== 'undefined');
+    console.log('window.ethereum:', typeof window.ethereum);
     const paymentId = window.location.pathname.split('/').pop();
+    console.log('Payment ID:', paymentId);
 
     const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
@@ -362,8 +365,11 @@
 
     async function loadPayment() {
       try {
+        console.log('Loading payment:', paymentId);
         const res = await fetch(`/api/payment-links/${paymentId}`);
+        console.log('Response status:', res.status);
         const data = await res.json();
+        console.log('Payment data:', data);
 
         if (data.status === 'paid') {
           showPaid(data.tx_hash);
@@ -380,7 +386,8 @@
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('payment-info').classList.remove('hidden');
       } catch (err) {
-        showStatus('Failed to load payment details', 'error');
+        console.error('Load error:', err);
+        showStatus('Failed to load: ' + err.message, 'error');
       }
     }
 
