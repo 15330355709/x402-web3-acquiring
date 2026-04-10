@@ -11,7 +11,7 @@ const router = Router();
 router.get("/:id", (req: Request, res: Response, next) => {
   const accept = req.headers.accept || "";
   if (accept.includes("text/html")) {
-    res.sendFile(path.join(__dirname, "../../public/pay.html"));
+    res.sendFile(path.join(process.cwd(), "public", "pay.html"));
     return;
   }
   next();
