@@ -365,11 +365,8 @@
 
     async function loadPayment() {
       try {
-        console.log('Loading payment:', paymentId);
         const res = await fetch(`/api/payment-links/${paymentId}`);
-        console.log('Response status:', res.status);
         const data = await res.json();
-        console.log('Payment data:', data);
 
         if (data.status === 'paid') {
           showPaid(data.tx_hash);
@@ -383,11 +380,11 @@
         document.getElementById('merchant-name').textContent = data.merchant_id;
         document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
         document.getElementById('description').textContent = data.description || 'No description';
-        document.getElementById('loading').classList.add('hidden');
-        document.getElementById('payment-info').classList.remove('hidden');
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('payment-info').style.display = 'block';
       } catch (err) {
-        console.error('Load error:', err);
-        showStatus('Failed to load: ' + err.message, 'error');
+        document.getElementById('loading').innerHTML = '<p>Error loading payment</p>';
       }
     }
 
@@ -566,12 +563,12 @@
       const el = document.getElementById('status');
       el.className = `status ${type}`;
       el.textContent = message;
-      el.classList.remove('hidden');
+      el.style.display = 'block';
     }
 
     function showPaid(txHash) {
-      document.getElementById('payment-info').classList.add('hidden');
-      document.getElementById('paid-info').classList.remove('hidden');
+      document.getElementById('payment-info').style.display = 'none';
+      document.getElementById('paid-info').style.display = 'block';
       if (txHash) {
         document.getElementById('tx-link').innerHTML =
           `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">View Transaction →</a>`;
@@ -579,8 +576,8 @@
     }
 
     function showExpired() {
-      document.getElementById('payment-info').classList.add('hidden');
-      document.getElementById('expired-info').classList.remove('hidden');
+      document.getElementById('payment-info').style.display = 'none';
+      document.getElementById('expired-info').style.display = 'block';
     }
 
     loadPayment();
