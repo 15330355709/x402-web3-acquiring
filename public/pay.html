@@ -255,6 +255,7 @@
           </div>
 
           <button class="btn" id="pay-btn" onclick="pay()">Pay Now</button>
+          <button class="btn btn-metamask" id="copy-btn" onclick="copyLink()" style="margin-top: 12px;">Copy Payment Link</button>
 
           <div id="status" class="status hidden"></div>
         </div>
@@ -326,18 +327,18 @@
           // In MetaMask browser
           walletHintText.textContent = 'MetaMask detected - Click Pay Now to pay';
           walletHint.style.display = 'block';
+          document.getElementById('copy-btn').style.display = 'none';
         } else if (isMobile) {
           // On mobile but not in MetaMask browser
-          payBtn.classList.remove('btn');
-          payBtn.classList.add('btn-metamask');
-          payBtn.textContent = 'Open in MetaMask App';
-          walletHintText.textContent = 'Opens payment in MetaMask app on your phone';
+          walletHintText.textContent = 'Open this page in MetaMask browser to pay';
           walletHint.style.display = 'block';
+          document.getElementById('pay-btn').style.display = 'none';
         } else {
           // Desktop without MetaMask
           walletHintText.textContent = 'Please install MetaMask to pay';
           walletHint.style.display = 'block';
           payBtn.disabled = true;
+          document.getElementById('copy-btn').style.display = 'none';
         }
       } catch (err) {
         document.getElementById('loading').innerHTML = '<p>Error loading payment</p>';
@@ -347,12 +348,10 @@
     async function pay() {
       const payBtn = document.getElementById('pay-btn');
 
-      // Mobile: Open in MetaMask app
+      // Mobile: Show instructions to open in MetaMask browser
       if (isMobile && !hasMetaMask) {
         const currentUrl = window.location.href;
-        // Use MetaMask deep link
-        const metamaskUrl = `metamask://browser/${encodeURIComponent(currentUrl)}`;
-        window.location.href = metamaskUrl;
+        showStatus('Please open this link in MetaMask browser: Copy the URL and paste into MetaMask App → Browser', 'info');
         return;
       }
 
@@ -540,6 +539,15 @@
     function showExpired() {
       document.getElementById('payment-info').classList.add('hidden');
       document.getElementById('expired-info').classList.remove('hidden');
+    }
+
+    function copyLink() {
+      const url = window.location.href;
+      navigator.clipboard.writeText(url).then(() => {
+        showStatus('Link copied! Open MetaMask App → Browser → Paste to pay', 'success');
+      }).catch(() => {
+        showStatus('Failed to copy. Please copy URL manually.', 'error');
+      });
     }
 
     loadPayment();
