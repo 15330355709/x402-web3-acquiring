@@ -383,7 +383,7 @@
         payBtn.innerHTML = '<span class="spinner"></span>Signing...';
         showStatus('Please sign in MetaMask...', 'info');
 
-        const nonce = BigInt(ethers.utils.hexlify(ethers.utils.randomBytes(32)));
+        const nonce = BigInt('0x' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join(''));
         const validAfter = Math.floor(Date.now() / 1000) - 600;
         const deadline = Math.floor(Date.now() / 1000) + 1800;
         const chainId = 84532;
