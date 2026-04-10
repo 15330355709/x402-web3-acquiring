@@ -200,12 +200,14 @@
     .loading p { color: #64748b; font-size: 14px; }
     .footer { padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center; }
     .footer p { font-size: 11px; color: #94a3b8; }
-    .desktop-only { display: block; }
-    .mobile-only { display: none; }
-    @media (max-width: 600px) {
-      .desktop-only { display: none; }
-      .mobile-only { display: block; }
+    .wallet-info {
+      background: #fef3c7;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      text-align: center;
     }
+    .wallet-info p { color: #92400e; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -248,15 +250,12 @@
             <div class="description-value" id="description">-</div>
           </div>
 
-          <div class="desktop-only">
-            <button class="btn" id="pay-btn" onclick="pay()">Pay Now</button>
+          <div id="wallet-status" class="wallet-info" style="display: none;">
+            <p id="wallet-status-text">Checking wallet...</p>
           </div>
 
-          <div class="mobile-only">
-            <button class="btn btn-metamask" id="open-metamask-btn" onclick="openMetaMaskMobile()">
-              Pay with MetaMask App
-            </button>
-          </div>
+          <button class="btn" id="pay-btn" onclick="pay()">Pay Now</button>
+          <button class="btn btn-metamask" id="metamask-btn" onclick="openMetaMask()">Open in MetaMask</button>
 
           <div id="status" class="status" style="display: none;"></div>
         </div>
@@ -288,128 +287,83 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
   <script>
     const paymentId = window.location.pathname.split('/').pop();
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
     const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
 
+    let paymentData = null;
+    let requirements = null;
+
     async function loadPayment() {
       try {
         const res = await fetch(`/api/payment-links/${paymentId}`);
-        const data = await res.json();
+        paymentData = await res.json();
 
-        if (data.status === 'paid') {
-          showPaid(data.tx_hash);
+        if (paymentData.status === 'paid') {
+          showPaid(paymentData.tx_hash);
           return;
         }
-        if (data.status === 'expired') {
+        if (paymentData.status === 'expired') {
           showExpired();
           return;
         }
 
-        document.getElementById('merchant-name').textContent = data.merchant_id;
-        document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
-        document.getElementById('description').textContent = data.description || 'No description';
+        document.getElementById('merchant-name').textContent = paymentData.merchant_id;
+        document.getElementById('amount').textContent = parseFloat(paymentData.amount).toFixed(2);
+        document.getElementById('description').textContent = paymentData.description || 'No description';
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('payment-info').style.display = 'block';
 
-        if (isMobile) {
-          document.getElementById('status').className = 'status info';
-          document.getElementById('status').textContent = 'Tap "Pay with MetaMask App" to pay';
-          document.getElementById('status').style.display = 'block';
+        // Check if in MetaMask browser
+        if (window.ethereum) {
+          document.getElementById('wallet-status').style.display = 'block';
+          document.getElementById('wallet-status-text').textContent = 'MetaMask detected! Click "Pay Now" to pay';
+          document.getElementById('metamask-btn').style.display = 'none';
+        } else {
+          document.getElementById('wallet-status').style.display = 'block';
+          document.getElementById('wallet-status-text').textContent = 'Not in MetaMask browser. Click "Open in MetaMask" to open.';
+          document.getElementById('pay-btn').style.display = 'none';
         }
       } catch (err) {
         document.getElementById('loading').innerHTML = '<p>Error loading payment</p>';
       }
     }
 
-    async function openMetaMaskMobile() {
-      const btn = document.getElementById('open-metamask-btn');
+    function openMetaMask() {
+      // Try to open in MetaMask app via deep link
+      const url = window.location.href;
+      const metamaskUrl = `metamask://browser/${encodeURIComponent(url)}`;
 
-      try {
-        btn.disabled = true;
-        btn.innerHTML = 'Opening MetaMask...';
+      window.location.href = metamaskUrl;
 
-        // Get payment requirements
-        const payRes = await fetch(`/pay/${paymentId}`);
-        if (payRes.status === 200) {
-          showPaid((await payRes.json()).tx_hash);
-          return;
-        }
-        if (payRes.status !== 402) {
-          throw new Error('Server error');
-        }
-
-        const header = payRes.headers.get('payment-required');
-        const paymentRequired = JSON.parse(atob(header));
-        const requirements = paymentRequired.accepts[0];
-
-        // Build MetaMask WalletConnect URL
-        // For mobile, we use WalletConnect v2 URI format
-        const chainId = 'eip155:84532';
-        const tokenAddress = requirements.asset;
-        const amount = requirements.amount;
-        const toAddress = requirements.payTo;
-
-        // Convert to decimal for MetaMask
-        const amountDecimal = (BigInt(amount) / BigInt(1)).toString();
-
-        // Create a simplified WalletConnect-style URI for MetaMask
-        // MetaMask mobile supports WalletConnect
-        const wcUri = `wc:${paymentId}@2?bridge=https://bridge.walletconnect.org&key=1234567890`;
-
-        // Alternative: Use Ethereum URI scheme for MetaMask
-        const ethUri = `ethereum:${wcUri}`;
-
-        // Try MetaMask deep link first
-        const metamaskAppUrl = `metamask://wc?uri=${encodeURIComponent(wcUri)}`;
-
-        // Open MetaMask
-        window.location.href = metamaskAppUrl;
-
-        // Start polling for payment status
-        pollPaymentStatus();
-
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Pay with MetaMask App';
-        showStatus(err.message || 'Failed to open MetaMask', 'error');
-      }
+      // Start polling to check if payment was completed
+      setTimeout(() => {
+        checkPaymentStatus();
+      }, 3000);
     }
 
-    async function pollPaymentStatus() {
-      let attempts = 0;
-      const maxAttempts = 60;
+    async function checkPaymentStatus() {
+      try {
+        const res = await fetch(`/api/payment-links/${paymentId}`);
+        const data = await res.json();
 
-      const interval = setInterval(async () => {
-        attempts++;
-        try {
-          const res = await fetch(`/api/payment-links/${paymentId}`);
-          const data = await res.json();
-
-          if (data.status === 'paid') {
-            clearInterval(interval);
-            showPaid(data.tx_hash);
-          } else if (data.status === 'expired') {
-            clearInterval(interval);
-            showExpired();
-          } else if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            showStatus('Payment timeout', 'warning');
-          }
-        } catch (err) {
-          console.error('Poll error:', err);
+        if (data.status === 'paid') {
+          showPaid(data.tx_hash);
+        } else if (data.status === 'expired') {
+          showExpired();
         }
-      }, 3000);
+      } catch (err) {
+        console.error('Check status error:', err);
+      }
     }
 
     async function pay() {
       const btn = document.getElementById('pay-btn');
 
       if (!window.ethereum) {
-        showStatus('Please install MetaMask', 'error');
+        showStatus('Please open this page in MetaMask browser', 'error');
         return;
       }
 
@@ -437,7 +391,7 @@
 
         const header = payRes.headers.get('payment-required');
         const paymentRequired = JSON.parse(atob(header));
-        const requirements = paymentRequired.accepts[0];
+        requirements = paymentRequired.accepts[0];
         const amount = BigInt(requirements.amount);
 
         showStatus('Checking token allowance...', 'info');
