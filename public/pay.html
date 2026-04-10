@@ -137,7 +137,6 @@
     .btn:disabled { opacity: 0.7; cursor: not-allowed; }
     .btn-metamask {
       background: #f6851b;
-      margin-top: 12px;
     }
     .btn-metamask:hover:not(:disabled) {
       box-shadow: 0 8px 24px rgba(246, 133, 27, 0.4);
@@ -200,14 +199,15 @@
     .loading p { color: #64748b; font-size: 14px; }
     .footer { padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center; }
     .footer p { font-size: 11px; color: #94a3b8; }
-    .wallet-info {
+    .wallet-hint {
       background: #fef3c7;
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 16px;
       text-align: center;
     }
-    .wallet-info p { color: #92400e; font-size: 13px; }
+    .wallet-hint p { color: #92400e; font-size: 13px; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -225,7 +225,7 @@
         <p>Loading payment details...</p>
       </div>
 
-      <div id="payment-info" style="display: none;">
+      <div id="payment-info" class="hidden">
         <div class="content">
           <div class="merchant-row">
             <div class="merchant-icon">🏪</div>
@@ -250,14 +250,13 @@
             <div class="description-value" id="description">-</div>
           </div>
 
-          <div id="wallet-status" class="wallet-info" style="display: none;">
-            <p id="wallet-status-text">Checking wallet...</p>
+          <div id="wallet-hint" class="wallet-hint hidden">
+            <p id="wallet-hint-text"></p>
           </div>
 
           <button class="btn" id="pay-btn" onclick="pay()">Pay Now</button>
-          <button class="btn btn-metamask" id="metamask-btn" onclick="openMetaMask()">Open in MetaMask</button>
 
-          <div id="status" class="status" style="display: none;"></div>
+          <div id="status" class="status hidden"></div>
         </div>
 
         <div class="footer">
@@ -265,7 +264,7 @@
         </div>
       </div>
 
-      <div id="paid-info" style="display: none;">
+      <div id="paid-info" class="hidden">
         <div class="paid-section">
           <div class="paid-icon">✓</div>
           <h2>Payment Complete!</h2>
@@ -274,7 +273,7 @@
         </div>
       </div>
 
-      <div id="expired-info" style="display: none;">
+      <div id="expired-info" class="hidden">
         <div class="expired-section">
           <div class="expired-icon">⏱️</div>
           <h2>Payment Expired</h2>
@@ -287,6 +286,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
   <script>
     const paymentId = window.location.pathname.split('/').pop();
+    const isMobile = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const hasMetaMask = typeof window.ethereum !== 'undefined';
 
     const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
@@ -313,63 +314,57 @@
         document.getElementById('amount').textContent = parseFloat(paymentData.amount).toFixed(2);
         document.getElementById('description').textContent = paymentData.description || 'No description';
 
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('payment-info').style.display = 'block';
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('payment-info').classList.remove('hidden');
 
-        // Check if in MetaMask browser
-        if (window.ethereum) {
-          document.getElementById('wallet-status').style.display = 'block';
-          document.getElementById('wallet-status-text').textContent = 'MetaMask detected! Click "Pay Now" to pay';
-          document.getElementById('metamask-btn').style.display = 'none';
+        // Setup button based on platform
+        const payBtn = document.getElementById('pay-btn');
+        const walletHint = document.getElementById('wallet-hint');
+        const walletHintText = document.getElementById('wallet-hint-text');
+
+        if (hasMetaMask) {
+          // In MetaMask browser
+          walletHintText.textContent = 'MetaMask detected - Click Pay Now to pay';
+          walletHint.style.display = 'block';
+        } else if (isMobile) {
+          // On mobile but not in MetaMask browser
+          payBtn.classList.remove('btn');
+          payBtn.classList.add('btn-metamask');
+          payBtn.textContent = 'Open in MetaMask App';
+          walletHintText.textContent = 'Opens payment in MetaMask app on your phone';
+          walletHint.style.display = 'block';
         } else {
-          document.getElementById('wallet-status').style.display = 'block';
-          document.getElementById('wallet-status-text').textContent = 'Not in MetaMask browser. Click "Open in MetaMask" to open.';
-          document.getElementById('pay-btn').style.display = 'none';
+          // Desktop without MetaMask
+          walletHintText.textContent = 'Please install MetaMask to pay';
+          walletHint.style.display = 'block';
+          payBtn.disabled = true;
         }
       } catch (err) {
         document.getElementById('loading').innerHTML = '<p>Error loading payment</p>';
       }
     }
 
-    function openMetaMask() {
-      // Try to open in MetaMask app via deep link
-      const url = window.location.href;
-      const metamaskUrl = `metamask://browser/${encodeURIComponent(url)}`;
-
-      window.location.href = metamaskUrl;
-
-      // Start polling to check if payment was completed
-      setTimeout(() => {
-        checkPaymentStatus();
-      }, 3000);
-    }
-
-    async function checkPaymentStatus() {
-      try {
-        const res = await fetch(`/api/payment-links/${paymentId}`);
-        const data = await res.json();
-
-        if (data.status === 'paid') {
-          showPaid(data.tx_hash);
-        } else if (data.status === 'expired') {
-          showExpired();
-        }
-      } catch (err) {
-        console.error('Check status error:', err);
-      }
-    }
-
     async function pay() {
-      const btn = document.getElementById('pay-btn');
+      const payBtn = document.getElementById('pay-btn');
 
+      // Mobile: Open in MetaMask app
+      if (isMobile && !hasMetaMask) {
+        const currentUrl = window.location.href;
+        // Use MetaMask deep link
+        const metamaskUrl = `metamask://browser/${encodeURIComponent(currentUrl)}`;
+        window.location.href = metamaskUrl;
+        return;
+      }
+
+      // Desktop or MetaMask browser
       if (!window.ethereum) {
-        showStatus('Please open this page in MetaMask browser', 'error');
+        showStatus('Please install MetaMask', 'error');
         return;
       }
 
       try {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span>Connecting...';
+        payBtn.disabled = true;
+        payBtn.innerHTML = '<span class="spinner"></span>Connecting...';
 
         await switchToBaseSepolia();
 
@@ -378,7 +373,7 @@
         const address = await signer.getAddress();
 
         showStatus('Getting payment info...', 'info');
-        btn.innerHTML = '<span class="spinner"></span>Verifying...';
+        payBtn.innerHTML = '<span class="spinner"></span>Verifying...';
 
         const payRes = await fetch(`/pay/${paymentId}`);
         if (payRes.status === 200) {
@@ -395,7 +390,7 @@
         const amount = BigInt(requirements.amount);
 
         showStatus('Checking token allowance...', 'info');
-        btn.innerHTML = '<span class="spinner"></span>Checking...';
+        payBtn.innerHTML = '<span class="spinner"></span>Checking...';
 
         const erc20 = new ethers.Contract(requirements.asset, [
           'function allowance(address owner, address spender) view returns (uint256)',
@@ -405,7 +400,7 @@
 
         if (currentAllowance < amount) {
           showStatus('Approval required. Please confirm...', 'info');
-          btn.innerHTML = '<span class="spinner"></span>Approving...';
+          payBtn.innerHTML = '<span class="spinner"></span>Approving...';
 
           const erc20WithSigner = new ethers.Contract(requirements.asset, [
             'function approve(address spender, uint256 amount) returns (bool)',
@@ -417,7 +412,7 @@
           await approveTx.wait();
         }
 
-        btn.innerHTML = '<span class="spinner"></span>Signing...';
+        payBtn.innerHTML = '<span class="spinner"></span>Signing...';
         showStatus('Please sign in MetaMask...', 'info');
 
         const nonce = BigInt(ethers.hexlify(ethers.randomBytes(32)));
@@ -459,7 +454,7 @@
 
         const signature = await signer.signTypedData(domain, types, message);
 
-        btn.innerHTML = '<span class="spinner"></span>Submitting...';
+        payBtn.innerHTML = '<span class="spinner"></span>Submitting...';
         showStatus('Submitting payment...', 'info');
 
         const paymentPayload = {
@@ -491,8 +486,8 @@
         }
 
       } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Pay Now';
+        payBtn.disabled = false;
+        payBtn.textContent = 'Pay Now';
 
         if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
           showStatus('Transaction rejected', 'error');
@@ -530,12 +525,12 @@
       const el = document.getElementById('status');
       el.className = `status ${type}`;
       el.textContent = message;
-      el.style.display = 'block';
+      el.classList.remove('hidden');
     }
 
     function showPaid(txHash) {
-      document.getElementById('payment-info').style.display = 'none';
-      document.getElementById('paid-info').style.display = 'block';
+      document.getElementById('payment-info').classList.add('hidden');
+      document.getElementById('paid-info').classList.remove('hidden');
       if (txHash) {
         document.getElementById('tx-link').innerHTML =
           `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">View Transaction →</a>`;
@@ -543,8 +538,8 @@
     }
 
     function showExpired() {
-      document.getElementById('payment-info').style.display = 'none';
-      document.getElementById('expired-info').style.display = 'block';
+      document.getElementById('payment-info').classList.add('hidden');
+      document.getElementById('expired-info').classList.remove('hidden');
     }
 
     loadPayment();
