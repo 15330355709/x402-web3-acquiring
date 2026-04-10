@@ -45,12 +45,9 @@
       cursor: pointer;
       width: 100%;
       transition: background 0.2s;
-      margin-top: 8px;
     }
     .btn:hover { background: #1d4ed8; }
     .btn:disabled { background: #94a3b8; cursor: not-allowed; }
-    #approve-btn { background: #059669; }
-    #approve-btn:hover { background: #047857; }
     .status {
       margin-top: 20px;
       padding: 12px;
@@ -92,11 +89,8 @@
       <div class="currency">USDC (Base Sepolia Testnet)</div>
       <div class="description" id="description"></div>
 
-      <button class="btn" id="approve-btn" onclick="approvePermit2()">
-        Approve Permit2 (One-time)
-      </button>
-      <button class="btn" id="pay-btn" onclick="connectAndPay()">
-        Connect Wallet & Pay
+      <button class="btn" id="pay-btn" onclick="pay()">
+        Pay Now
       </button>
       <p class="hint" id="wallet-hint">Make sure you have ETH and USDC on Base Sepolia</p>
 
@@ -119,7 +113,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
   <script>
     const paymentId = window.location.pathname.split('/').pop();
-    let paymentData = null;
+
+    const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
+    const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
 
     async function loadPayment() {
       try {
@@ -135,7 +132,6 @@
           return;
         }
 
-        paymentData = data;
         document.getElementById('merchant-name').textContent = `Merchant: ${data.merchant_id}`;
         document.getElementById('amount').textContent = parseFloat(data.amount).toFixed(2);
         document.getElementById('description').textContent = data.description || '';
@@ -146,74 +142,74 @@
       }
     }
 
-    async function connectAndPay() {
+    async function pay() {
       const btn = document.getElementById('pay-btn');
 
       if (!window.ethereum) {
-        showStatus('Please open this page in MetaMask browser or install MetaMask', 'error');
+        showStatus('Please open this page in MetaMask browser', 'error');
         return;
       }
 
       try {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span>Connecting...';
 
-        const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
-          });
-        } catch (switchErr) {
-          if (switchErr.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: BASE_SEPOLIA_CHAIN_ID,
-                chainName: 'Base Sepolia',
-                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                rpcUrls: ['https://sepolia.base.org'],
-                blockExplorerUrls: ['https://sepolia.basescan.org'],
-              }],
-            });
-          } else {
-            throw switchErr;
-          }
-        }
+        // 1. Switch to Base Sepolia
+        await switchToBaseSepolia();
 
+        // 2. Connect wallet
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
 
-        btn.innerHTML = '<span class="spinner"></span>Processing payment...';
-        showStatus('Requesting payment details from server...', 'info');
-
+        // 3. Get payment requirements
+        showStatus('Getting payment info...', 'info');
         const payRes = await fetch(`/pay/${paymentId}`);
-
+        if (payRes.status === 200) {
+          const result = await payRes.json();
+          showPaid(result.tx_hash);
+          return;
+        }
         if (payRes.status !== 402) {
-          if (payRes.status === 200) {
-            const result = await payRes.json();
-            showPaid(result.tx_hash);
-            return;
-          }
-          throw new Error('Unexpected response from server');
+          throw new Error('Unexpected server response');
         }
 
-        const paymentRequiredHeader = payRes.headers.get('payment-required');
-        if (!paymentRequiredHeader) throw new Error('Missing payment requirements');
-
-        const paymentRequired = JSON.parse(atob(paymentRequiredHeader));
+        const header = payRes.headers.get('payment-required');
+        const paymentRequired = JSON.parse(atob(header));
         const requirements = paymentRequired.accepts[0];
+        const amount = BigInt(requirements.amount);
 
-        showStatus('Please sign the payment authorization in your wallet...', 'info');
+        // 4. Check Permit2 allowance
+        showStatus('Checking token allowance...', 'info');
+        const erc20 = new ethers.Contract(requirements.asset, [
+          'function allowance(address owner, address spender) view returns (uint256)',
+        ], provider);
 
-        const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
-        const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
-        const chainId = 84532;
+        const currentAllowance = await erc20.allowance(address, PERMIT2_ADDRESS);
+
+        // 5. Approve if needed
+        if (currentAllowance < amount) {
+          showStatus('Approving Permit2 to use your USDC...', 'info');
+          btn.innerHTML = '<span class="spinner"></span>Approving...';
+
+          const erc20WithSigner = new ethers.Contract(requirements.asset, [
+            'function approve(address spender, uint256 amount) returns (bool)',
+          ], signer);
+
+          const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+          const approveTx = await erc20WithSigner.approve(PERMIT2_ADDRESS, MaxUint256);
+          showStatus('Waiting for approval confirmation...', 'info');
+          await approveTx.wait();
+          showStatus('Approval confirmed!', 'success');
+        }
+
+        // 6. Sign and pay
+        btn.innerHTML = '<span class="spinner"></span>Signing...';
+        showStatus('Please sign the payment in your wallet...', 'info');
 
         const nonce = BigInt(ethers.hexlify(ethers.randomBytes(32)));
         const validAfter = Math.floor(Date.now() / 1000) - 600;
         const deadline = Math.floor(Date.now() / 1000) + 1800;
+        const chainId = 84532;
 
         const domain = {
           name: 'Permit2',
@@ -240,22 +236,17 @@
         };
 
         const message = {
-          permitted: {
-            token: requirements.asset,
-            amount: requirements.amount,
-          },
+          permitted: { token: requirements.asset, amount: requirements.amount },
           spender: X402_PROXY,
           nonce: nonce,
           deadline: deadline,
-          witness: {
-            to: requirements.payTo,
-            validAfter: validAfter,
-          },
+          witness: { to: requirements.payTo, validAfter: validAfter },
         };
 
         const signature = await signer.signTypedData(domain, types, message);
 
-        showStatus('Submitting payment...', 'info');
+        btn.innerHTML = '<span class="spinner"></span>Submitting...';
+        showStatus('Submitting payment to server...', 'info');
 
         const paymentPayload = {
           x402Version: 2,
@@ -275,9 +266,7 @@
         };
 
         const settleRes = await fetch(`/pay/${paymentId}`, {
-          headers: {
-            'Payment-Signature': btoa(JSON.stringify(paymentPayload)),
-          },
+          headers: { 'Payment-Signature': btoa(JSON.stringify(paymentPayload)) },
         });
 
         if (settleRes.status === 200) {
@@ -287,89 +276,40 @@
           const err = await settleRes.json();
           throw new Error(err.error || 'Payment failed');
         }
+
       } catch (err) {
         console.error(err);
+        btn.disabled = false;
+        btn.textContent = 'Pay Now';
+
         if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
-          showStatus('Transaction rejected by user', 'error');
+          showStatus('Transaction rejected', 'error');
         } else {
           showStatus(err.message || 'Payment failed', 'error');
         }
-        btn.disabled = false;
-        btn.textContent = 'Connect Wallet & Pay';
       }
     }
 
-    async function approvePermit2() {
-      const btn = document.getElementById('approve-btn');
-      const payBtn = document.getElementById('pay-btn');
-
-      if (!window.ethereum) {
-        showStatus('Please open this page in MetaMask browser or install MetaMask', 'error');
-        return;
-      }
-
+    async function switchToBaseSepolia() {
       try {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span>Approving...';
-
-        const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
-        try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+        });
+      } catch (switchErr) {
+        if (switchErr.code === 4902) {
           await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: BASE_SEPOLIA_CHAIN_ID,
+              chainName: 'Base Sepolia',
+              nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://sepolia.base.org'],
+              blockExplorerUrls: ['https://sepolia.basescan.org'],
+            }],
           });
-        } catch (switchErr) {
-          if (switchErr.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: BASE_SEPOLIA_CHAIN_ID,
-                chainName: 'Base Sepolia',
-                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                rpcUrls: ['https://sepolia.base.org'],
-                blockExplorerUrls: ['https://sepolia.basescan.org'],
-              }],
-            });
-          }
-        }
-
-        const p = new ethers.BrowserProvider(window.ethereum);
-        const s = await p.getSigner();
-
-        const payRes = await fetch(`/pay/${paymentId}`);
-        if (payRes.status !== 402) {
-          throw new Error('Could not get payment requirements');
-        }
-        const header = payRes.headers.get('payment-required');
-        const pr = JSON.parse(atob(header));
-        const req = pr.accepts[0];
-
-        const USDC_ADDRESS = req.asset;
-        const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
-        const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
-
-        const erc20 = new ethers.Contract(USDC_ADDRESS, [
-          'function approve(address spender, uint256 amount) public returns (bool)',
-        ], s);
-
-        showStatus('Please confirm the approval transaction...', 'info');
-        const tx = await erc20.approve(PERMIT2_ADDRESS, MaxUint256);
-        showStatus('Waiting for approval confirmation...', 'info');
-        await tx.wait();
-
-        showStatus('Permit2 approved! You can now pay.', 'success');
-        btn.disabled = false;
-        btn.textContent = 'Permit2 Approved ✓';
-        btn.style.background = '#16a34a';
-        payBtn.disabled = false;
-      } catch (err) {
-        console.error(err);
-        btn.disabled = false;
-        btn.textContent = 'Approve Permit2 (One-time)';
-        if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
-          showStatus('Approval rejected', 'error');
         } else {
-          showStatus(err.message || 'Approval failed', 'error');
+          throw switchErr;
         }
       }
     }
@@ -386,7 +326,6 @@
       document.getElementById('payment-info').classList.add('hidden');
       document.getElementById('expired-info').classList.add('hidden');
       document.getElementById('paid-info').classList.remove('hidden');
-
       if (txHash) {
         document.getElementById('tx-link').innerHTML =
           `<a href="https://sepolia.basescan.org/tx/${txHash}" target="_blank">${txHash}</a>`;
