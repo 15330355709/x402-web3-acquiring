@@ -129,19 +129,12 @@
       cursor: pointer;
       transition: transform 0.2s, box-shadow 0.2s;
       font-family: inherit;
-      margin-bottom: 12px;
     }
     .btn:hover:not(:disabled) {
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
     }
     .btn:disabled { opacity: 0.7; cursor: not-allowed; }
-    .btn-wc {
-      background: #3b99fc;
-    }
-    .btn-wc:hover:not(:disabled) {
-      box-shadow: 0 8px 24px rgba(59, 153, 252, 0.4);
-    }
     .btn .spinner {
       display: inline-block;
       width: 18px; height: 18px;
@@ -200,27 +193,14 @@
     .loading p { color: #64748b; font-size: 14px; }
     .footer { padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center; }
     .footer p { font-size: 11px; color: #94a3b8; }
-    .wallet-info {
-      background: #f0fdf4;
+    .hint {
+      background: #fef3c7;
       border-radius: 12px;
-      padding: 12px 16px;
+      padding: 16px;
       margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      text-align: center;
     }
-    .wallet-info-left { display: flex; align-items: center; gap: 8px; }
-    .wallet-info-left span { font-size: 14px; color: #166534; font-family: monospace; }
-    .disconnect-btn {
-      background: none;
-      border: 1px solid #dcfce7;
-      color: #166534;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .disconnect-btn:hover { background: #dcfce7; }
+    .hint p { color: #92400e; font-size: 13px; }
     .hidden { display: none !important; }
   </style>
 </head>
@@ -264,15 +244,11 @@
             <div class="description-value" id="description">-</div>
           </div>
 
-          <div id="wallet-info" class="wallet-info hidden">
-            <div class="wallet-info-left">
-              <span id="wallet-address">-</span>
-            </div>
-            <button class="disconnect-btn" id="disconnect-btn">Disconnect</button>
+          <div id="hint" class="hint">
+            <p id="hint-text"></p>
           </div>
 
-          <button class="btn btn-wc" id="connect-btn" onclick="connectWallet()">Connect Wallet</button>
-          <button class="btn" id="pay-btn" onclick="pay()" disabled>Pay Now</button>
+          <button class="btn" id="pay-btn" onclick="pay()">Pay Now</button>
 
           <div id="status" class="status hidden"></div>
         </div>
@@ -302,23 +278,16 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
-  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.17.0/dist/wc-ethereum-provider.min.js"></script>
-
   <script>
     const paymentId = window.location.pathname.split('/').pop();
-    const isMobile = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const hasMetaMask = typeof window.ethereum !== 'undefined';
 
     const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const X402_PROXY = '0x402085c248EeA27D92E8b30b2C58ed07f9E20001';
     const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
-    const BASE_SEPOLIA_CHAIN_ID_DECIMAL = 84532;
-    // Free WalletConnect Project ID from https://cloud.walletconnect.com
-    const WALLETCONNECT_PROJECT_ID = '2f05ae7f1116030fde2d36508f472bf1';
 
     let paymentData = null;
     let requirements = null;
-    let walletProvider = null;
-    let address = null;
 
     async function loadPayment() {
       try {
@@ -340,153 +309,36 @@
 
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('payment-info').classList.remove('hidden');
+
+        if (hasMetaMask) {
+          document.getElementById('hint-text').textContent = 'MetaMask detected - Click Pay Now to pay';
+        } else {
+          document.getElementById('hint-text').textContent = 'Please open this page in MetaMask browser';
+          document.getElementById('pay-btn').disabled = true;
+          document.getElementById('pay-btn').textContent = 'MetaMask Required';
+        }
       } catch (err) {
         document.getElementById('loading').innerHTML = '<p>Error loading payment</p>';
-      }
-    }
-
-    async function connectWallet() {
-      const connectBtn = document.getElementById('connect-btn');
-
-      try {
-        connectBtn.disabled = true;
-        connectBtn.innerHTML = '<span class="spinner"></span>Connecting...';
-        showStatus('Opening wallet selector...', 'info');
-
-        // Initialize WalletConnect v2 provider
-        walletProvider = await WalletConnect.EthereumProvider.init({
-          projectId: WALLETCONNECT_PROJECT_ID,
-          chains: [BASE_SEPOLIA_CHAIN_ID_DECIMAL],
-          optionalChains: [BASE_SEPOLIA_CHAIN_ID_DECIMAL],
-          showQrModal: true,
-          methods: ['eth_sendTransaction', 'personal_sign', 'eth_signTypedData'],
-          events: ['accountsChanged', 'chainChanged'],
-          metadata: {
-            name: 'x402 Payment',
-            description: 'Web3 Payment Gateway',
-            url: window.location.origin,
-            icons: ['https://x402.org/icon.png']
-          }
-        });
-
-        // Enable session (opens QR modal on desktop, wallet selector on mobile)
-        await walletProvider.enable();
-
-        // Get accounts
-        const accounts = walletProvider.accounts;
-        if (accounts && accounts.length > 0) {
-          address = accounts[0];
-          showWalletConnected(address);
-          connectBtn.classList.add('hidden');
-          document.getElementById('pay-btn').disabled = false;
-        }
-
-        // Handle account changes
-        walletProvider.on('accountsChanged', (accounts) => {
-          if (accounts.length > 0) {
-            address = accounts[0];
-            showWalletConnected(address);
-          } else {
-            disconnectWallet();
-          }
-        });
-
-        // Handle chain changes
-        walletProvider.on('chainChanged', (chainId) => {
-          if (parseInt(chainId) !== BASE_SEPOLIA_CHAIN_ID_DECIMAL) {
-            switchToBaseSepolia();
-          }
-        });
-
-      } catch (err) {
-        console.error('Connect error:', err);
-        connectBtn.disabled = false;
-        connectBtn.textContent = 'Connect Wallet';
-
-        if (err.code === 4001 || err.message?.includes('rejected') || err.message?.includes('denied')) {
-          showStatus('Connection rejected', 'error');
-        } else {
-          showStatus(err.message || 'Failed to connect wallet', 'error');
-        }
-      }
-    }
-
-    function showWalletConnected(addr) {
-      const walletInfo = document.getElementById('wallet-info');
-      const walletAddress = document.getElementById('wallet-address');
-      walletAddress.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
-      walletInfo.classList.remove('hidden');
-      showStatus('Wallet connected', 'success');
-    }
-
-    function disconnectWallet() {
-      if (walletProvider) {
-        walletProvider.disconnect();
-        walletProvider = null;
-      }
-      address = null;
-
-      document.getElementById('wallet-info').classList.add('hidden');
-      document.getElementById('connect-btn').classList.remove('hidden');
-      document.getElementById('connect-btn').disabled = false;
-      document.getElementById('connect-btn').textContent = 'Connect Wallet';
-      document.getElementById('pay-btn').disabled = true;
-    }
-
-    async function switchToBaseSepolia() {
-      try {
-        await walletProvider.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
-        });
-      } catch (switchErr) {
-        if (switchErr.code === 4902) {
-          await walletProvider.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: BASE_SEPOLIA_CHAIN_ID,
-              chainName: 'Base Sepolia',
-              nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-              rpcUrls: ['https://sepolia.base.org'],
-              blockExplorerUrls: ['https://sepolia.basescan.org'],
-            }],
-          });
-        }
       }
     }
 
     async function pay() {
       const payBtn = document.getElementById('pay-btn');
 
-      if (!address) {
-        showStatus('Please connect wallet first', 'error');
+      if (!window.ethereum) {
+        showStatus('Please install MetaMask', 'error');
         return;
       }
 
       try {
         payBtn.disabled = true;
-        payBtn.innerHTML = '<span class="spinner"></span>Processing...';
+        payBtn.innerHTML = '<span class="spinner"></span>Connecting...';
 
-        // Switch to Base Sepolia
-        try {
-          await walletProvider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
-          });
-        } catch (switchErr) {
-          if (switchErr.code === 4902) {
-            await walletProvider.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: BASE_SEPOLIA_CHAIN_ID,
-                chainName: 'Base Sepolia',
-                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                rpcUrls: ['https://sepolia.base.org'],
-                blockExplorerUrls: ['https://sepolia.basescan.org'],
-              }],
-            });
-          }
-        }
+        await switchToBaseSepolia();
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const address = await signer.getAddress();
 
         showStatus('Getting payment info...', 'info');
         payBtn.innerHTML = '<span class="spinner"></span>Verifying...';
@@ -508,40 +360,33 @@
         showStatus('Checking token allowance...', 'info');
         payBtn.innerHTML = '<span class="spinner"></span>Checking...';
 
-        // Check allowance
-        const allowanceData = await walletProvider.request({
-          method: 'eth_call',
-          params: [{
-            to: requirements.asset,
-            data: '0xdd62ed3e' + address.slice(2).padStart(64, '0') + PERMIT2_ADDRESS.slice(2).padStart(64, '0')
-          }]
-        });
+        const erc20 = new ethers.Contract(requirements.asset, [
+          'function allowance(address owner, address spender) view returns (uint256)',
+        ], provider);
 
-        const currentAllowance = BigInt(allowanceData || '0x0');
+        const currentAllowance = await erc20.allowance(address, PERMIT2_ADDRESS);
 
         if (currentAllowance < amount) {
           showStatus('Approval required. Please confirm...', 'info');
           payBtn.innerHTML = '<span class="spinner"></span>Approving...';
 
-          const approveData = {
-            to: requirements.asset,
-            from: address,
-            data: '0x095ea7b3' + PERMIT2_ADDRESS.slice(2).padStart(64, '0') + 'ff'.repeat(32),
-            value: '0x0'
-          };
+          const erc20WithSigner = new ethers.Contract(requirements.asset, [
+            'function approve(address spender, uint256 amount) returns (bool)',
+          ], signer);
 
-          await walletProvider.request({ method: 'eth_sendTransaction', params: [approveData] });
+          const MaxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+          const approveTx = await erc20WithSigner.approve(PERMIT2_ADDRESS, MaxUint256);
           showStatus('Waiting for approval...', 'info');
-          await new Promise(r => setTimeout(r, 5000));
+          await approveTx.wait();
         }
 
         payBtn.innerHTML = '<span class="spinner"></span>Signing...';
-        showStatus('Please sign in wallet...', 'info');
+        showStatus('Please sign in MetaMask...', 'info');
 
         const nonce = BigInt(ethers.utils.hexlify(ethers.utils.randomBytes(32)));
         const validAfter = Math.floor(Date.now() / 1000) - 600;
         const deadline = Math.floor(Date.now() / 1000) + 1800;
-        const chainId = BASE_SEPOLIA_CHAIN_ID_DECIMAL;
+        const chainId = 84532;
 
         const domain = {
           name: 'Permit2',
@@ -575,10 +420,7 @@
           witness: { to: requirements.payTo, validAfter: validAfter },
         };
 
-        const signature = await walletProvider.request({
-          method: 'eth_signTypedData',
-          params: [address, { domain, types, message }]
-        });
+        const signature = await signer.signTypedData(domain, types, message);
 
         payBtn.innerHTML = '<span class="spinner"></span>Submitting...';
         showStatus('Submitting payment...', 'info');
@@ -615,10 +457,34 @@
         payBtn.disabled = false;
         payBtn.textContent = 'Pay Now';
 
-        if (err.code === 4001 || err.message?.includes('rejected') || err.message?.includes('denied')) {
+        if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
           showStatus('Transaction rejected', 'error');
         } else {
           showStatus(err.message || 'Payment failed', 'error');
+        }
+      }
+    }
+
+    async function switchToBaseSepolia() {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+        });
+      } catch (switchErr) {
+        if (switchErr.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: BASE_SEPOLIA_CHAIN_ID,
+              chainName: 'Base Sepolia',
+              nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://sepolia.base.org'],
+              blockExplorerUrls: ['https://sepolia.basescan.org'],
+            }],
+          });
+        } else {
+          throw switchErr;
         }
       }
     }
@@ -643,8 +509,6 @@
       document.getElementById('payment-info').classList.add('hidden');
       document.getElementById('expired-info').classList.remove('hidden');
     }
-
-    document.getElementById('disconnect-btn').addEventListener('click', disconnectWallet);
 
     loadPayment();
   </script>
